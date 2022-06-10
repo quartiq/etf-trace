@@ -39,27 +39,25 @@ struct Args {
     output: String,
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     env_logger::init();
 
     let cli = Args::parse();
 
     let probes = Probe::list_all();
-    let probe = probes[0].open().unwrap();
+    let probe = probes[0].open()?;
 
-    let mut session = probe
-        .attach("STM32H743ZITx", probe_rs::Permissions::default())
-        .unwrap();
+    let mut session = probe.attach("STM32H743ZITx", probe_rs::Permissions::default())?;
 
-    let components = session.get_arm_components().unwrap();
+    let components = session.get_arm_components()?;
 
     // Enable tracing of the H7 core.
     {
-        let mut core = session.core(0).unwrap();
-        probe_rs::architecture::arm::component::enable_tracing(&mut core).unwrap();
+        let mut core = session.core(0)?;
+        probe_rs::architecture::arm::component::enable_tracing(&mut core)?;
     }
 
-    let interface = session.get_arm_interface().unwrap();
+    let interface = session.get_arm_interface()?;
 
     // Configure the trace funnel to the ETF. There are two trace funnels in the STM32H7 system
     // that are only distinguishable via the number of input ports and the base address. One is the
@@ -67,22 +65,18 @@ fn main() {
     let cstf = components
         .iter()
         .find_map(|comp| {
-            for component in comp.iter() {
+            comp.iter().find(|component| {
                 let id = component.component.id();
-                if id.peripheral_id().is_of_type(PeripheralType::TraceFunnel)
+                id.peripheral_id().is_of_type(PeripheralType::TraceFunnel)
                     && id.component_address() == CSTF_BASE_ADDRESS
-                {
-                    return Some(component);
-                }
-            }
-            None
+            })
         })
         .unwrap();
 
     // Enable the ITM port of the trace funnel.
     let mut trace_funnel = TraceFunnel::new(interface, cstf);
-    trace_funnel.unlock().unwrap();
-    trace_funnel.enable_port(0b10).unwrap();
+    trace_funnel.unlock()?;
+    trace_funnel.enable_port(0b10)?;
 
     // Configure the ITM to generate trace data from the DWT.
     let mut itm = Itm::new(
@@ -93,8 +87,8 @@ fn main() {
             .unwrap(),
     );
 
-    itm.unlock().unwrap();
-    itm.tx_enable().unwrap();
+    itm.unlock()?;
+    itm.tx_enable()?;
 
     // Configure the DWT to trace exception entry and exit.
     let mut dwt = Dwt::new(
@@ -105,36 +99,32 @@ fn main() {
             .unwrap(),
     );
 
-    dwt.enable().unwrap();
-    dwt.enable_exception_trace().unwrap();
+    dwt.enable()?;
+    dwt.enable_exception_trace()?;
 
     // Configure the ETF.
     let etf = components
         .iter()
         .find_map(|comp| {
-            for component in comp.iter() {
+            comp.iter().find(|component| {
                 let id = component.component.id().peripheral_id();
-                let code = id.jep106().and_then(|jep106| jep106.get()).unwrap_or("");
-                let part = id.part();
-                if code == "ARM Ltd" && part == 0x961 {
-                    return Some(component);
-                }
-            }
-            None
+                let code = id.jep106().and_then(|jep106| jep106.get());
+                code == Some("ARM Ltd") && id.part() == 0x961
+            })
         })
         .unwrap();
 
     let mut etf = etf::EmbeddedTraceFifo::new(interface, etf);
-    let fifo_size = etf.fifo_size().unwrap();
+    let fifo_size = etf.fifo_size()?;
 
-    etf.disable_capture().unwrap();
-    etf.set_mode(etf::Mode::Software).unwrap();
-    etf.enable_capture().unwrap();
+    etf.disable_capture()?;
+    etf.set_mode(etf::Mode::Software)?;
+    etf.enable_capture()?;
 
     // Wait until ETB buffer fills.
     println!("Waiting for capture to complete");
-    while !etf.full().unwrap() {
-        let level = etf.fill_level().unwrap();
+    while !etf.full()? {
+        let level = etf.fill_level()?;
         if level > 0 {
             println!("Received: {} of {} bytes", level, fifo_size);
         }
@@ -144,16 +134,18 @@ fn main() {
     // Section 2.2.2 "Software FIFO Mode". Without following this procedure, the trace data does
     // not properly stop even after disabling capture.
     println!("Trace capture complete");
-    etf.stop_on_flush(true).unwrap();
-    etf.manual_flush().unwrap();
+    etf.stop_on_flush(true)?;
+    etf.manual_flush()?;
 
-    let mut output = std::fs::File::create(cli.output).unwrap();
+    let mut output = std::fs::File::create(cli.output)?;
 
     // Extract ETB data.
-    while let Some(data) = etf.read().unwrap() {
+    while let Some(data) = etf.read()? {
         // TODO: Determine endianness and framing of coresight packets.
-        output.write_all(&data.to_le_bytes()).unwrap();
+        output.write_all(&data.to_le_bytes())?;
     }
 
-    etf.disable_capture().unwrap();
+    etf.disable_capture()?;
+
+    Ok(())
 }
