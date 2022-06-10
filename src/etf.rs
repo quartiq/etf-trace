@@ -8,7 +8,6 @@ use bitfield::bitfield;
 const REGISTER_OFFSET_RSZ: u32 = 0x04;
 const REGISTER_OFFSET_RRD: u32 = 0x10;
 const REGISTER_OFFSET_CTL: u32 = 0x20;
-const REGISTER_OFFSET_LBUFLVL: u32 = 0x2C;
 const REGISTER_OFFSET_CBUFLVL: u32 = 0x30;
 
 #[repr(u8)]
@@ -84,31 +83,37 @@ impl<'a> EmbeddedTraceFifo<'a> {
     }
 
     /// Check if the FIFO is full.
-    pub fn is_full(&mut self) -> Result<bool, Error> {
+    pub fn full(&mut self) -> Result<bool, Error> {
         let status = Status::load(self.component, self.interface)?;
         Ok(status.full())
     }
 
     /// Check if the FIFO is empty.
-    pub fn is_empty(&mut self) -> Result<bool, Error> {
+    pub fn empty(&mut self) -> Result<bool, Error> {
         let status = Status::load(self.component, self.interface)?;
         Ok(status.empty())
     }
 
     /// Check if the ET capture has stopped and all internal pipelines and buffers have been
     /// drained.
-    pub fn is_ready(&mut self) -> Result<bool, Error> {
+    pub fn ready(&mut self) -> Result<bool, Error> {
         let status = Status::load(self.component, self.interface)?;
         Ok(status.ready())
     }
 
-    pub fn latched_fill_level(&mut self) -> Result<u32, Error> {
-        let level = self
-            .component
-            .read_reg(self.interface, REGISTER_OFFSET_LBUFLVL)?;
-        Ok(level)
+    /// Check if the ETF has triggered.
+    ///
+    /// # Note
+    /// This will only be set when operating in circular buffer modes.
+    pub fn triggered(&mut self) -> Result<bool, Error> {
+        let status = Status::load(self.component, self.interface)?;
+        Ok(status.trigd())
     }
 
+    /// Get the current number of bytes within the FIFO.
+    ///
+    /// # Note
+    /// This will always return zero if the capture is disabled.
     pub fn fill_level(&mut self) -> Result<u32, Error> {
         let level = self
             .component
@@ -116,6 +121,10 @@ impl<'a> EmbeddedTraceFifo<'a> {
         Ok(level * core::mem::size_of::<u32>() as u32)
     }
 
+    /// Configure the capture stop-on-flush semantics.
+    ///
+    /// # Args
+    /// * `stop` - Specified true if the capture should stop on flush events.
     pub fn stop_on_flush(&mut self, stop: bool) -> Result<(), Error> {
         let mut ffcr = FormatFlushControl::load(self.component, self.interface)?;
         ffcr.set_stop_on_flush(stop);
@@ -123,20 +132,12 @@ impl<'a> EmbeddedTraceFifo<'a> {
         Ok(())
     }
 
+    /// Generate a manual flush event.
     pub fn manual_flush(&mut self) -> Result<(), Error> {
         let mut ffcr = FormatFlushControl::load(self.component, self.interface)?;
         ffcr.set_manual_flush(true);
         ffcr.store(self.component, self.interface)?;
         Ok(())
-    }
-
-    /// Check if the ETF has triggered.
-    ///
-    /// # Note
-    /// This will only be set when operating in circular buffer modes.
-    pub fn is_triggered(&mut self) -> Result<bool, Error> {
-        let status = Status::load(self.component, self.interface)?;
-        Ok(status.trigd())
     }
 
     /// Get the size of the FIFO in bytes.

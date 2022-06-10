@@ -128,7 +128,7 @@ fn main() {
 
     // Wait until ETB buffer fills.
     println!("Waiting for capture to complete");
-    while !etf.is_full().unwrap() {
+    while !etf.full().unwrap() {
         let level = etf.fill_level().unwrap();
         if level > 0 {
             println!("Received: {} of {} bytes", level, fifo_size);
