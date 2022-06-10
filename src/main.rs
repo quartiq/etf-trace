@@ -151,11 +151,9 @@ fn main() {
 
     // Extract ETB data.
     while let Some(data) = etf.read().unwrap() {
-        output.write_all(&data.to_be_bytes()).unwrap();
+        // TODO: Determine endianness and framing of coresight packets.
+        output.write_all(&data.to_le_bytes()).unwrap();
     }
 
     etf.disable_capture().unwrap();
-
-    // TODO: Decode ETF data through the ITM decoder.
-    // TODO: Export ETF data to a file.
 }
