@@ -18,6 +18,9 @@
 //! debug probe.
 mod etf;
 
+use clap::Parser;
+use std::io::Write;
+
 use probe_rs::{
     architecture::arm::{
         component::{Dwt, Itm, TraceFunnel},
@@ -29,8 +32,18 @@ use probe_rs::{
 // The base address of the ETF trace funnel.
 const CSTF_BASE_ADDRESS: u64 = 0xE00F_3000;
 
+#[derive(Parser)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    #[clap(short, long)]
+    output: String,
+}
+
 fn main() {
     env_logger::init();
+
+    let cli = Args::parse();
+
     let probes = Probe::list_all();
     let probe = probes[0].open().unwrap();
 
@@ -134,10 +147,11 @@ fn main() {
     etf.stop_on_flush(true).unwrap();
     etf.manual_flush().unwrap();
 
+    let mut output = std::fs::File::create(cli.output).unwrap();
+
     // Extract ETB data.
-    let mut trace_data = vec![];
     while let Some(data) = etf.read().unwrap() {
-        trace_data.push(data);
+        output.write_all(&data.to_be_bytes()).unwrap();
     }
 
     etf.disable_capture().unwrap();

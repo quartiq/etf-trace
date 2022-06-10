@@ -3,9 +3,11 @@ name = "stm32h7-capture"
 version = "0.1.0"
 edition = "2021"
 
+description = "Capture ITM trace data using the STM32H7 embedded trace FIFO and store results to a file"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 probe-rs = { git = "https://github.com/probe-rs/probe-rs" }
 env_logger = "0.9"
 bitfield = "0.13"
+clap = {version = "3.1", features = ["derive"] }
