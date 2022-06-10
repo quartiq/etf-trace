@@ -40,10 +40,10 @@ fn main() {
 
     let components = session.get_arm_components().unwrap();
 
-    // Disable tracing of the H7 core.
+    // Enable tracing of the H7 core.
     {
         let mut core = session.core(0).unwrap();
-        probe_rs::architecture::arm::component::disable_swv(&mut core).unwrap();
+        probe_rs::architecture::arm::component::enable_tracing(&mut core).unwrap();
     }
 
     let interface = session.get_arm_interface().unwrap();
@@ -94,14 +94,6 @@ fn main() {
 
     dwt.enable().unwrap();
     dwt.enable_exception_trace().unwrap();
-
-    // Enable tracing of the H7 core.
-    {
-        let mut core = session.core(0).unwrap();
-        probe_rs::architecture::arm::component::enable_tracing(&mut core).unwrap();
-    }
-
-    let interface = session.get_arm_interface().unwrap();
 
     // Configure the ETF.
     let etf = components
