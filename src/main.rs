@@ -1,3 +1,21 @@
+//! STM32H7 tracing with the Embedded Trace FIFO
+//!
+//! # Design
+//! The STM32H7 tracing infrastructure allows trace data to be generated on the SWO output, which
+//! is a UART output to the debug probe. Because of the nature of this output, the throughput is
+//! inherently limited. Additionally, there is very little buffering between ITM packet generation
+//! and SWO output, so even a small amount of trace data generated in a short time interval can
+//! result in the trace data overflowing in the SWO data path.
+//!
+//! To work around issues with buffering and throughput of the SWO output, this program provides a
+//! mechanism to instead capture ITM trace data within the Embedded Trace FIFO (ETF). The ETC is a
+//! 4KB FIFO stored in SRAM that can be used to buffer data before draining the trace data to an
+//! external source. The ETF supports both draining data to the TPIU via a parallel trace hardware
+//! interface as well as through the debug registers.
+//!
+//! This program uses the ETF in "software" mode with no external tracing utilities required.
+//! Instead, the ETF is used to buffer up a trace which is then read out from the device via the
+//! debug probe.
 mod etf;
 
 use probe_rs::{
@@ -8,6 +26,7 @@ use probe_rs::{
     Probe,
 };
 
+// The base address of the ETF trace funnel.
 const CSTF_BASE_ADDRESS: u64 = 0xE00F_3000;
 
 fn main() {
@@ -29,7 +48,9 @@ fn main() {
 
     let interface = session.get_arm_interface().unwrap();
 
-    // Configure the trace funnel to the ETF. Do not configure the SWO trace funnel.
+    // Configure the trace funnel to the ETF. There are two trace funnels in the STM32H7 system
+    // that are only distinguishable via the number of input ports and the base address. One is the
+    // SWO funnel and the other is the ETF funnel.
     let cstf = components
         .iter()
         .find_map(|comp| {
@@ -50,7 +71,7 @@ fn main() {
     trace_funnel.unlock().unwrap();
     trace_funnel.enable_port(0b10).unwrap();
 
-    // Configure the ITM
+    // Configure the ITM to generate trace data from the DWT.
     let mut itm = Itm::new(
         interface,
         components
@@ -62,7 +83,7 @@ fn main() {
     itm.unlock().unwrap();
     itm.tx_enable().unwrap();
 
-    // Configure the DWT
+    // Configure the DWT to trace exception entry and exit.
     let mut dwt = Dwt::new(
         interface,
         components
@@ -99,24 +120,21 @@ fn main() {
         .unwrap();
 
     let mut etf = etf::EmbeddedTraceFifo::new(interface, etf);
+    let fifo_size = etf.fifo_size().unwrap();
 
     etf.disable_capture().unwrap();
-    println!("Read ETF FIFO Size: {}", etf.fifo_size().unwrap());
     etf.set_mode(etf::Mode::Software).unwrap();
-    println!("Enabling ETF capture");
-    println!("ETF READY: {}", etf.is_ready().unwrap());
     etf.enable_capture().unwrap();
 
     // Wait until ETB buffer fills.
-    println!("Waiting for capture FIFO to fill");
-    println!("ETF READY: {}", etf.is_ready().unwrap());
+    println!("Waiting for capture to complete");
     while !etf.is_full().unwrap() {
         let level = etf.fill_level().unwrap();
         if level > 0 {
-            println!("ETF_CBUFLVL: {}", level);
+            println!("Received: {} of {} bytes", level, fifo_size);
         }
     }
-    println!("ETF capture complete");
+    println!("Trace capture complete");
     etf.stop_on_flush(true).unwrap();
     etf.manual_flush().unwrap();
 
@@ -124,7 +142,6 @@ fn main() {
     let mut etf_data = vec![];
     while let Some(data) = etf.read().unwrap() {
         etf_data.push(data);
-        println!("{:8X}", data);
     }
 
     etf.disable_capture().unwrap();

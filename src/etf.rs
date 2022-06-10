@@ -113,7 +113,7 @@ impl<'a> EmbeddedTraceFifo<'a> {
         let level = self
             .component
             .read_reg(self.interface, REGISTER_OFFSET_CBUFLVL)?;
-        Ok(level)
+        Ok(level * core::mem::size_of::<u32>() as u32)
     }
 
     pub fn stop_on_flush(&mut self, stop: bool) -> Result<(), Error> {
