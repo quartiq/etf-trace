@@ -17,6 +17,9 @@
 //! Instead, the ETF is used to buffer up a trace which is then read out from the device via the
 //! debug probe.
 mod etf;
+mod coresight_frame;
+
+use coresight_frame::CoresightFrameBuffer;
 
 use clap::Parser;
 use std::io::Write;
@@ -147,13 +150,35 @@ fn main() {
     etf.stop_on_flush(true).unwrap();
     etf.manual_flush().unwrap();
 
-    let mut output = std::fs::File::create(cli.output).unwrap();
+    let mut output = std::fs::File::create(&cli.output).unwrap();
+
+    let mut frame_buffer = CoresightFrameBuffer::new();
 
     // Extract ETB data.
     while let Some(data) = etf.read().unwrap() {
-        // TODO: Determine endianness and framing of coresight packets.
-        output.write_all(&data.to_le_bytes()).unwrap();
+        // The ETF is specified in "CoreSight Trace Memory Controller Technical Reference Manual"
+        // Section 2.2.3. The trace funnel stores trace data in CoreSight frames, which contain more
+        // metadata about the source of the trace than raw ITM data. Trace frames are described in
+        // the ARM CoreSight Architecture Specification v3.0 D4.2. Each frame is composed of 4
+        // bytes.
+
+        // In this case, we are only tracing information from the ITM/DWT and we are not using the
+        // ETM port (its disabled in the trace funnel). The rtic-scope and ITM decode utilities
+        // process raw ITM data as opposed to CoreSight frames, so we need to extract the ITM trace
+        // data and strip away the coresight framing.
+        frame_buffer.add_word(data);
+
+        // Write all of the available data from the frame buffer.
+        output.write_all(&frame_buffer.drain()).unwrap();
     }
 
     etf.disable_capture().unwrap();
+
+    drop(output);
+
+    let reader = itm::Decoder::new(std::fs::File::open(cli.output).unwrap(), itm::DecoderOptions { ignore_eof: false }).singles();
+
+    for packet in reader {
+        println!("Packet: {:?}", packet);
+    }
 }
