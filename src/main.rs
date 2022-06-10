@@ -134,6 +134,10 @@ fn main() {
             println!("Received: {} of {} bytes", level, fifo_size);
         }
     }
+
+    // This sequence is taken from "CoreSight Trace Memory Controller Technical Reference Manual"
+    // Section 2.2.2 "Software FIFO Mode". Without following this procedure, the trace data does
+    // not properly stop even after disabling capture.
     println!("Trace capture complete");
     etf.stop_on_flush(true).unwrap();
     etf.manual_flush().unwrap();
