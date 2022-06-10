@@ -135,9 +135,9 @@ fn main() {
     etf.manual_flush().unwrap();
 
     // Extract ETB data.
-    let mut etf_data = vec![];
+    let mut trace_data = vec![];
     while let Some(data) = etf.read().unwrap() {
-        etf_data.push(data);
+        trace_data.push(data);
     }
 
     etf.disable_capture().unwrap();
