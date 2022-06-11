@@ -512,6 +512,7 @@ dependencies = [
  "bitfield",
  "clap",
  "env_logger",
+ "log",
  "probe-rs",
  "thiserror",
 ]

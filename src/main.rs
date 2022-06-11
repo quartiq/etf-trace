@@ -19,6 +19,7 @@
 mod etf;
 
 use clap::Parser;
+use log::info;
 use std::io::Write;
 
 use probe_rs::{
@@ -37,6 +38,8 @@ const CSTF_BASE_ADDRESS: u64 = 0xE00F_3000;
 struct Args {
     #[clap(short, long)]
     output: String,
+    #[clap(short, long, default_value = "STM32H743ZITx")]
+    target: String,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -59,14 +62,19 @@ where
 }
 
 fn main() -> anyhow::Result<()> {
-    env_logger::init();
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("stm32h7_capture=info"),
+    )
+    .init();
 
     let cli = Args::parse();
 
-    let probes = Probe::list_all();
-    let probe = probes[0].open()?;
+    let probe = Probe::list_all()
+        .get(0)
+        .ok_or(Error::UnableToOpenProbe("not found"))?
+        .open()?;
 
-    let mut session = probe.attach("STM32H743ZITx", probe_rs::Permissions::default())?;
+    let mut session = probe.attach(cli.target, probe_rs::Permissions::default())?;
 
     let components = session.get_arm_components()?;
 
@@ -117,7 +125,7 @@ fn main() -> anyhow::Result<()> {
     dwt.enable_exception_trace()?;
 
     // Configure the ETF.
-    // TODO: upstream PeripheralType::Etf
+    // TODO: upstream ETF and PeripheralType::Etf
     let etf = find_component(&components, |comp| {
         comp.iter().find(|component| {
             let id = component.component.id().peripheral_id();
@@ -134,18 +142,18 @@ fn main() -> anyhow::Result<()> {
     etf.enable_capture()?;
 
     // Wait until ETB buffer fills.
-    println!("Waiting for capture to complete");
+    info!("Waiting for capture to complete");
     while !etf.full()? {
         let level = etf.fill_level()?;
         if level > 0 {
-            println!("Received: {} of {} bytes", level, fifo_size);
+            info!("Received: {} of {} bytes", level, fifo_size);
         }
     }
 
     // This sequence is taken from "CoreSight Trace Memory Controller Technical Reference Manual"
     // Section 2.2.2 "Software FIFO Mode". Without following this procedure, the trace data does
     // not properly stop even after disabling capture.
-    println!("Trace capture complete");
+    info!("Trace capture complete");
     etf.stop_on_flush(true)?;
     etf.manual_flush()?;
 
