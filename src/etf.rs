@@ -49,7 +49,7 @@ impl<'a> EmbeddedTraceFifo<'a> {
     /// * `mode` - The desired operational mode of the FIFO.
     pub fn set_mode(&mut self, mode: Mode) -> Result<(), Error> {
         let mut mode_reg = EtfMode::load(self.component, self.interface)?;
-        mode_reg.set_mode(mode as u8);
+        mode_reg.set_mode(mode as _);
         mode_reg.store(self.component, self.interface)?;
         Ok(())
     }
@@ -127,7 +127,7 @@ impl<'a> EmbeddedTraceFifo<'a> {
     /// * `stop` - Specified true if the capture should stop on flush events.
     pub fn stop_on_flush(&mut self, stop: bool) -> Result<(), Error> {
         let mut ffcr = FormatFlushControl::load(self.component, self.interface)?;
-        ffcr.set_stop_on_flush(stop);
+        ffcr.set_stoponfl(stop);
         ffcr.store(self.component, self.interface)?;
         Ok(())
     }
@@ -135,7 +135,7 @@ impl<'a> EmbeddedTraceFifo<'a> {
     /// Generate a manual flush event.
     pub fn manual_flush(&mut self) -> Result<(), Error> {
         let mut ffcr = FormatFlushControl::load(self.component, self.interface)?;
-        ffcr.set_manual_flush(true);
+        ffcr.set_flushman(true);
         ffcr.store(self.component, self.interface)?;
         Ok(())
     }
@@ -154,8 +154,16 @@ bitfield! {
     pub struct FormatFlushControl(u32);
     impl Debug;
 
-    pub manual_flush, set_manual_flush: 6;
-    pub stop_on_flush, set_stop_on_flush: 12;
+    pub drainbuf, set_drainbuf: 14;
+    pub stpontrgev, set_stpontrgev: 13;
+    pub stoponfl, set_stoponfl: 12;
+    pub trigonfl, set_trigonfl: 10;
+    pub trgontrgev, set_trgontrgev: 9;
+    pub flushman, set_flushman: 6;
+    pub fontrgev, set_fontrgev: 5;
+    pub fonflin, set_flonflin: 4;
+    pub enti, set_enti: 1;
+    pub enft, set_enft: 0;
 }
 
 impl From<u32> for FormatFlushControl {
@@ -181,6 +189,7 @@ bitfield! {
     impl Debug;
 
     pub empty, _: 4;
+    pub ftempty, _: 3;
     pub ready, _: 2;
     pub trigd, _: 1;
     pub full, _: 0;
