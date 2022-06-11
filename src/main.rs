@@ -36,10 +36,10 @@ const CSTF_BASE_ADDRESS: u64 = 0xE00F_3000;
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-    #[clap(short, long)]
-    output: String,
     #[clap(short, long, default_value = "STM32H743ZITx")]
     target: String,
+    #[clap(short, long)]
+    output: String,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -138,32 +138,36 @@ fn main() -> anyhow::Result<()> {
     let fifo_size = etf.fifo_size()?;
 
     etf.disable_capture()?;
+    while !etf.ready()? {}
     etf.set_mode(etf::Mode::Software)?;
     etf.enable_capture()?;
 
-    // Wait until ETB buffer fills.
-    info!("Waiting for capture to complete");
+    // Wait until ETB fills.
     while !etf.full()? {
-        let level = etf.fill_level()?;
-        if level > 0 {
-            info!("Received: {} of {} bytes", level, fifo_size);
-        }
+        info!("ETB level: {} of {} bytes", etf.fill_level()?, fifo_size);
     }
+    info!("ETB full");
 
     // This sequence is taken from "CoreSight Trace Memory Controller Technical Reference Manual"
     // Section 2.2.2 "Software FIFO Mode". Without following this procedure, the trace data does
     // not properly stop even after disabling capture.
-    info!("Trace capture complete");
     etf.stop_on_flush(true)?;
     etf.manual_flush()?;
 
     let mut output = std::fs::File::create(cli.output)?;
 
     // Extract ETB data.
-    while let Some(data) = etf.read()? {
-        // TODO: Determine endianness and framing of coresight packets.
-        output.write_all(&data.to_le_bytes())?;
+    // TODO: Determine endianness and framing of coresight packets.
+    // Read until ready and empty to allow e.g. pending stop sequence to be written
+    // to ETB despite back pressure when full.
+    loop {
+        if let Some(data) = etf.read()? {
+            output.write_all(&data.to_le_bytes())?;
+        } else if etf.ready()? {
+            break;
+        }
     }
+    assert!(etf.empty()?);
 
     etf.disable_capture()?;
 
