@@ -24,9 +24,9 @@ use std::io::Write;
 use probe_rs::{
     architecture::arm::{
         component::{Dwt, Itm, TraceFunnel},
-        memory::PeripheralType,
+        memory::{CoresightComponent, PeripheralType},
     },
-    Probe,
+    Error, Probe,
 };
 
 // The base address of the ETF trace funnel.
@@ -37,6 +37,25 @@ const CSTF_BASE_ADDRESS: u64 = 0xE00F_3000;
 struct Args {
     #[clap(short, long)]
     output: String,
+}
+
+#[derive(thiserror::Error, Debug)]
+enum CaptureError {
+    #[error("Could not find a required CoresightComponent")]
+    ComponentNotFound,
+}
+
+fn find_component<F>(
+    components: &[CoresightComponent],
+    func: F,
+) -> Result<&CoresightComponent, Error>
+where
+    F: FnMut(&CoresightComponent) -> Option<&CoresightComponent>,
+{
+    components
+        .iter()
+        .find_map(func)
+        .ok_or_else(|| Error::architecture_specific(CaptureError::ComponentNotFound))
 }
 
 fn main() -> anyhow::Result<()> {
@@ -62,16 +81,13 @@ fn main() -> anyhow::Result<()> {
     // Configure the trace funnel to the ETF. There are two trace funnels in the STM32H7 system
     // that are only distinguishable via the number of input ports and the base address. One is the
     // SWO funnel and the other is the ETF funnel.
-    let cstf = components
-        .iter()
-        .find_map(|comp| {
-            comp.iter().find(|component| {
-                let id = component.component.id();
-                id.peripheral_id().is_of_type(PeripheralType::TraceFunnel)
-                    && id.component_address() == CSTF_BASE_ADDRESS
-            })
+    let cstf = find_component(&components, |comp| {
+        comp.iter().find(|component| {
+            let id = component.component.id();
+            id.peripheral_id().is_of_type(PeripheralType::TraceFunnel)
+                && id.component_address() == CSTF_BASE_ADDRESS
         })
-        .unwrap();
+    })?;
 
     // Enable the ITM port of the trace funnel.
     let mut trace_funnel = TraceFunnel::new(interface, cstf);
@@ -81,10 +97,9 @@ fn main() -> anyhow::Result<()> {
     // Configure the ITM to generate trace data from the DWT.
     let mut itm = Itm::new(
         interface,
-        components
-            .iter()
-            .find_map(|component| component.find_component(PeripheralType::Itm))
-            .unwrap(),
+        find_component(&components, |component| {
+            component.find_component(PeripheralType::Itm)
+        })?,
     );
 
     itm.unlock()?;
@@ -93,26 +108,23 @@ fn main() -> anyhow::Result<()> {
     // Configure the DWT to trace exception entry and exit.
     let mut dwt = Dwt::new(
         interface,
-        components
-            .iter()
-            .find_map(|component| component.find_component(PeripheralType::Dwt))
-            .unwrap(),
+        find_component(&components, |component| {
+            component.find_component(PeripheralType::Dwt)
+        })?,
     );
 
     dwt.enable()?;
     dwt.enable_exception_trace()?;
 
     // Configure the ETF.
-    let etf = components
-        .iter()
-        .find_map(|comp| {
-            comp.iter().find(|component| {
-                let id = component.component.id().peripheral_id();
-                let code = id.jep106().and_then(|jep106| jep106.get());
-                code == Some("ARM Ltd") && id.part() == 0x961
-            })
+    // TODO: upstream PeripheralType::Etf
+    let etf = find_component(&components, |comp| {
+        comp.iter().find(|component| {
+            let id = component.component.id().peripheral_id();
+            let code = id.jep106().and_then(|jep106| jep106.get());
+            code == Some("ARM Ltd") && id.part() == 0x961
         })
-        .unwrap();
+    })?;
 
     let mut etf = etf::EmbeddedTraceFifo::new(interface, etf);
     let fifo_size = etf.fifo_size()?;

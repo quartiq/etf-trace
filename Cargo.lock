@@ -513,6 +513,7 @@ dependencies = [
  "clap",
  "env_logger",
  "probe-rs",
+ "thiserror",
 ]
 
 [[package]]
