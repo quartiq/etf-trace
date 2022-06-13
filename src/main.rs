@@ -86,6 +86,28 @@ fn main() -> anyhow::Result<()> {
 
     let interface = session.get_arm_interface()?;
 
+    // Configure the DWT to trace exception entry and exit.
+    let mut dwt = Dwt::new(
+        interface,
+        find_component(&components, |component| {
+            component.find_component(PeripheralType::Dwt)
+        })?,
+    );
+
+    dwt.enable()?;
+    dwt.enable_exception_trace()?;
+
+    // Configure the ITM to generate trace data from the DWT.
+    let mut itm = Itm::new(
+        interface,
+        find_component(&components, |component| {
+            component.find_component(PeripheralType::Itm)
+        })?,
+    );
+
+    itm.unlock()?;
+    itm.tx_enable()?;
+
     // Configure the trace funnel to the ETF. There are two trace funnels in the STM32H7 system
     // that are only distinguishable via the number of input ports and the base address. One is the
     // SWO funnel and the other is the ETF funnel.
@@ -101,28 +123,6 @@ fn main() -> anyhow::Result<()> {
     let mut trace_funnel = TraceFunnel::new(interface, cstf);
     trace_funnel.unlock()?;
     trace_funnel.enable_port(0b10)?;
-
-    // Configure the ITM to generate trace data from the DWT.
-    let mut itm = Itm::new(
-        interface,
-        find_component(&components, |component| {
-            component.find_component(PeripheralType::Itm)
-        })?,
-    );
-
-    itm.unlock()?;
-    itm.tx_enable()?;
-
-    // Configure the DWT to trace exception entry and exit.
-    let mut dwt = Dwt::new(
-        interface,
-        find_component(&components, |component| {
-            component.find_component(PeripheralType::Dwt)
-        })?,
-    );
-
-    dwt.enable()?;
-    dwt.enable_exception_trace()?;
 
     // Configure the ETF.
     // TODO: upstream ETF and PeripheralType::Etf
