@@ -20,7 +20,7 @@ mod etf;
 
 use clap::Parser;
 use log::info;
-use std::io::Write;
+use std::io::{Read, Write};
 
 use probe_rs::{
     architecture::arm::{
@@ -40,6 +40,8 @@ struct Args {
     target: String,
     #[clap(short, long)]
     output: String,
+    #[clap(long)]
+    output2: String,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -154,7 +156,7 @@ fn main() -> anyhow::Result<()> {
     etf.stop_on_flush(true)?;
     etf.manual_flush()?;
 
-    let mut output = std::fs::File::create(cli.output)?;
+    let mut output = std::fs::File::create(&cli.output)?;
 
     // Extract ETB data.
     // TODO: Determine endianness and framing of coresight packets.
@@ -170,6 +172,28 @@ fn main() -> anyhow::Result<()> {
     assert!(etf.empty()?);
 
     etf.disable_capture()?;
+
+    //output.rewind()?;
+    let mut output = std::fs::File::open(&cli.output)?;
+    let mut output2 = std::fs::File::create(&cli.output2)?;
+
+    let mut id = 0.into();
+    let mut buf = [0u8; 16];
+    loop {
+        match output.read_exact(&mut buf) {
+            Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            other => other,
+        }?;
+        let mut frame = etf::Frame::new(buf, id);
+        for (id, data) in &mut frame {
+            match id.into() {
+                0x0d => output2.write_all(&[data])?,
+                0x00 => (),
+                id => info!("unexpected id {id}: {data}"),
+            }
+        }
+        id = frame.id();
+    }
 
     Ok(())
 }

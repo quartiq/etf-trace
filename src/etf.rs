@@ -1,3 +1,5 @@
+use core::iter::Iterator;
+
 use probe_rs::{
     architecture::arm::{component::DebugRegister, memory::CoresightComponent, ArmProbeInterface},
     Error,
@@ -236,4 +238,64 @@ impl From<EtfMode> for u32 {
 impl DebugRegister for EtfMode {
     const ADDRESS: u32 = 0x28;
     const NAME: &'static str = "ETF_MODE";
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct Frame {
+    data: [u8; 16],
+    idx: usize,
+    id: Id,
+}
+
+impl Frame {
+    pub fn new(data: [u8; 16], id: Id) -> Self {
+        Self { data, id, idx: 0 }
+    }
+
+    pub fn id(&self) -> Id {
+        self.id
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Id(u8);
+impl From<u8> for Id {
+    fn from(id: u8) -> Self {
+        Self(id)
+    }
+}
+impl From<Id> for u8 {
+    fn from(id: Id) -> Self {
+        id.0
+    }
+}
+
+impl Iterator for &mut Frame {
+    type Item = (Id, u8);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.idx >= 15 {
+            return None;
+        }
+        let byte = self.data[self.idx];
+        let lsb = (self.data[15] >> (self.idx >> 1)) & 1;
+        let ret = match (self.idx & 1, byte & 1) {
+            (0, 0) => Some((self.id, byte | lsb)),
+            (0, 1) => {
+                let new_id = (byte >> 1).into();
+                let next_id = if lsb == 1 { self.id } else { new_id };
+                self.id = new_id;
+                if self.idx >= 14 {
+                    None
+                } else {
+                    self.idx += 1;
+                    Some((next_id, self.data[self.idx]))
+                }
+            }
+            (1, _) => Some((self.id, byte)),
+            _ => unreachable!(),
+        };
+        self.idx += 1;
+        ret
+    }
 }
