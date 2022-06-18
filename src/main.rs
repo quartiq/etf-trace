@@ -20,8 +20,10 @@ mod etf;
 
 use clap::Parser;
 use log::info;
-use std::io::{Read, Write};
+use std::io::Cursor;
+use std::io::{Read, Seek, Write};
 
+use anyhow::Context;
 use probe_rs::{
     architecture::arm::{
         component::{Dwt, Itm, TraceFunnel},
@@ -40,8 +42,6 @@ struct Args {
     target: String,
     #[clap(short, long)]
     output: String,
-    #[clap(long)]
-    output2: String,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -156,7 +156,7 @@ fn main() -> anyhow::Result<()> {
     etf.stop_on_flush(true)?;
     etf.manual_flush()?;
 
-    let mut output = std::fs::File::create(&cli.output)?;
+    let mut etf_trace = Cursor::new(vec![0; 8 << 10]);
 
     // Extract ETB data.
     // TODO: Determine endianness and framing of coresight packets.
@@ -164,7 +164,7 @@ fn main() -> anyhow::Result<()> {
     // to ETB despite back pressure when full.
     loop {
         if let Some(data) = etf.read()? {
-            output.write_all(&data.to_le_bytes())?;
+            etf_trace.write_all(&data.to_le_bytes())?;
         } else if etf.ready()? {
             break;
         }
@@ -173,26 +173,38 @@ fn main() -> anyhow::Result<()> {
 
     etf.disable_capture()?;
 
-    //output.rewind()?;
-    let mut output = std::fs::File::open(&cli.output)?;
-    let mut output2 = std::fs::File::create(&cli.output2)?;
+    etf_trace.rewind()?;
+    let mut itm_trace = std::fs::File::open(&cli.output)?;
 
     let mut id = 0.into();
     let mut buf = [0u8; 16];
     loop {
-        match output.read_exact(&mut buf) {
+        match etf_trace.read_exact(&mut buf) {
             Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => break,
             other => other,
         }?;
         let mut frame = etf::Frame::new(buf, id);
         for (id, data) in &mut frame {
             match id.into() {
-                0x0d => output2.write_all(&[data])?,
+                0x0d => itm_trace.write_all(&[data])?,
                 0x00 => (),
                 id => info!("unexpected id {id}: {data}"),
             }
         }
         id = frame.id();
+    }
+
+    itm_trace.rewind()?;
+    let decoder = itm::Decoder::new(itm_trace, itm::DecoderOptions { ignore_eof: false });
+    for packets in decoder.timestamps(itm::TimestampsConfiguration {
+        clock_frequency: 1,
+        lts_prescaler: itm::LocalTimestampOptions::Enabled,
+        expect_malformed: false,
+    }) {
+        match packets {
+            Err(e) => return Err(e).context("Decoder error"),
+            Ok(packets) => println!("{:?}", packets),
+        }
     }
 
     Ok(())
