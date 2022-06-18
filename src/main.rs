@@ -174,7 +174,11 @@ fn main() -> anyhow::Result<()> {
     etf.disable_capture()?;
 
     etf_trace.rewind()?;
-    let mut itm_trace = std::fs::File::open(&cli.output)?;
+    let mut itm_trace = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .read(true)
+        .open(cli.output)?;
 
     let mut id = 0.into();
     let mut buf = [0u8; 16];
@@ -197,13 +201,13 @@ fn main() -> anyhow::Result<()> {
     itm_trace.rewind()?;
     let decoder = itm::Decoder::new(itm_trace, itm::DecoderOptions { ignore_eof: false });
     for packets in decoder.timestamps(itm::TimestampsConfiguration {
-        clock_frequency: 1,
+        clock_frequency: 400_000_000,
         lts_prescaler: itm::LocalTimestampOptions::Enabled,
         expect_malformed: false,
     }) {
         match packets {
             Err(e) => return Err(e).context("Decoder error"),
-            Ok(packets) => println!("{:?}", packets),
+            Ok(packets) => info!("{:?}", packets),
         }
     }
 
