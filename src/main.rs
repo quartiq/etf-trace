@@ -70,10 +70,8 @@ where
 }
 
 fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("etf_trace=info"),
-    )
-    .init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("etf_trace=info"))
+        .init();
 
     let cli = Args::parse();
 
