@@ -240,23 +240,7 @@ impl DebugRegister for EtfMode {
     const NAME: &'static str = "ETF_MODE";
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct Frame {
-    data: [u8; 16],
-    idx: usize,
-    id: Id,
-}
-
-impl Frame {
-    pub fn new(data: [u8; 16], id: Id) -> Self {
-        Self { data, id, idx: 0 }
-    }
-
-    pub fn id(&self) -> Id {
-        self.id
-    }
-}
-
+/// Trace ID (a.k.a. ATID or trace source ID)
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Id(u8);
 impl From<u8> for Id {
@@ -270,10 +254,37 @@ impl From<Id> for u8 {
     }
 }
 
-impl Iterator for &mut Frame {
+/// Formatted frame demultiplexer.
+/// Takes a reference to a 16 byte frame from the ETB/ETF or TPIU and
+/// reads source ID and bytes from it.
+#[derive(Copy, Clone, Debug)]
+pub struct Frame<'a> {
+    data: &'a [u8; 16],
+    idx: usize,
+    id: Id,
+}
+
+impl<'a> Frame<'a> {
+    pub fn new(data: &'a [u8; 16], id: Id) -> Self {
+        Self { data, id, idx: 0 }
+    }
+
+    pub fn id(&self) -> Id {
+        self.id
+    }
+
+    pub fn rewind(&mut self) {
+        self.idx = 0;
+    }
+}
+
+impl<'a> Iterator for &mut Frame<'a> {
     type Item = (Id, u8);
 
     fn next(&mut self) -> Option<Self::Item> {
+        // DDI0314H_coresight_components_trm (ARM DDI 0314H) 9.6.1,
+        // US20050039078A1,
+        // and others
         if self.idx >= 15 {
             return None;
         }
