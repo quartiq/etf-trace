@@ -1,3 +1,5 @@
+use core::iter::Iterator;
+
 use probe_rs::{
     architecture::arm::{component::DebugRegister, memory::CoresightComponent, ArmProbeInterface},
     Error,
@@ -49,7 +51,7 @@ impl<'a> EmbeddedTraceFifo<'a> {
     /// * `mode` - The desired operational mode of the FIFO.
     pub fn set_mode(&mut self, mode: Mode) -> Result<(), Error> {
         let mut mode_reg = EtfMode::load(self.component, self.interface)?;
-        mode_reg.set_mode(mode as u8);
+        mode_reg.set_mode(mode as _);
         mode_reg.store(self.component, self.interface)?;
         Ok(())
     }
@@ -127,7 +129,7 @@ impl<'a> EmbeddedTraceFifo<'a> {
     /// * `stop` - Specified true if the capture should stop on flush events.
     pub fn stop_on_flush(&mut self, stop: bool) -> Result<(), Error> {
         let mut ffcr = FormatFlushControl::load(self.component, self.interface)?;
-        ffcr.set_stop_on_flush(stop);
+        ffcr.set_stoponfl(stop);
         ffcr.store(self.component, self.interface)?;
         Ok(())
     }
@@ -135,7 +137,7 @@ impl<'a> EmbeddedTraceFifo<'a> {
     /// Generate a manual flush event.
     pub fn manual_flush(&mut self) -> Result<(), Error> {
         let mut ffcr = FormatFlushControl::load(self.component, self.interface)?;
-        ffcr.set_manual_flush(true);
+        ffcr.set_flushman(true);
         ffcr.store(self.component, self.interface)?;
         Ok(())
     }
@@ -154,8 +156,16 @@ bitfield! {
     pub struct FormatFlushControl(u32);
     impl Debug;
 
-    pub manual_flush, set_manual_flush: 6;
-    pub stop_on_flush, set_stop_on_flush: 12;
+    pub drainbuf, set_drainbuf: 14;
+    pub stpontrgev, set_stpontrgev: 13;
+    pub stoponfl, set_stoponfl: 12;
+    pub trigonfl, set_trigonfl: 10;
+    pub trgontrgev, set_trgontrgev: 9;
+    pub flushman, set_flushman: 6;
+    pub fontrgev, set_fontrgev: 5;
+    pub fonflin, set_flonflin: 4;
+    pub enti, set_enti: 1;
+    pub enft, set_enft: 0;
 }
 
 impl From<u32> for FormatFlushControl {
@@ -181,6 +191,7 @@ bitfield! {
     impl Debug;
 
     pub empty, _: 4;
+    pub ftempty, _: 3;
     pub ready, _: 2;
     pub trigd, _: 1;
     pub full, _: 0;
@@ -227,4 +238,79 @@ impl From<EtfMode> for u32 {
 impl DebugRegister for EtfMode {
     const ADDRESS: u32 = 0x28;
     const NAME: &'static str = "ETF_MODE";
+}
+
+/// Trace ID (a.k.a. ATID or trace source ID)
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Id(u8);
+impl From<u8> for Id {
+    fn from(id: u8) -> Self {
+        Self(id)
+    }
+}
+impl From<Id> for u8 {
+    fn from(id: Id) -> Self {
+        id.0
+    }
+}
+
+/// Formatted frame demultiplexer.
+/// Takes a reference to a 16 byte frame from the ETB/ETF or TPIU and
+/// reads source ID and bytes from it.
+#[derive(Copy, Clone, Debug)]
+pub struct Frame<'a> {
+    data: &'a [u8; 16],
+    idx: usize,
+    id: Id,
+}
+
+impl<'a> Frame<'a> {
+    pub fn new(data: &'a [u8; 16], id: Id) -> Self {
+        Self { data, id, idx: 0 }
+    }
+
+    pub fn id(&self) -> Id {
+        self.id
+    }
+
+    pub fn rewind(&mut self) {
+        self.idx = 0;
+    }
+}
+
+impl<'a> Iterator for &mut Frame<'a> {
+    type Item = (Id, u8);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // DDI0314H_coresight_components_trm (ARM DDI 0314H) 9.6.1,
+        // US20050039078A1,
+        // and others
+        if self.idx >= 15 {
+            return None;
+        }
+        let byte = self.data[self.idx];
+        let lsb = (self.data[15] >> (self.idx >> 1)) & 1;
+        let ret = if self.idx & 1 != 0 {
+            // Odd indices of the frame always contain data associated with the previous ID.
+            Some((self.id, byte))
+        } else if byte & 1 == 0 {
+            // Even bytes utilize the LSbit to indicate if they contain an ID or data. For a cleared LSbit, data is
+            // contained and the correct LSbit is stored at the end of the frame.
+            Some((self.id, byte | lsb))
+        } else {
+            // Even bytes may also contain a new ID to swap to. In this case, the LSbit contained at the end of the
+            // frame is used to indicate if the following data uses the new or old ID.
+            let new_id = (byte >> 1).into();
+            let next_id = if lsb == 1 { self.id } else { new_id };
+            self.id = new_id;
+            if self.idx >= 14 {
+                None
+            } else {
+                self.idx += 1;
+                Some((next_id, self.data[self.idx]))
+            }
+        };
+        self.idx += 1;
+        ret
+    }
 }
