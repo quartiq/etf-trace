@@ -290,21 +290,25 @@ impl<'a> Iterator for &mut Frame<'a> {
         }
         let byte = self.data[self.idx];
         let lsb = (self.data[15] >> (self.idx >> 1)) & 1;
-        let ret = match (self.idx & 1, byte & 1) {
-            (0, 0) => Some((self.id, byte | lsb)),
-            (0, 1) => {
-                let new_id = (byte >> 1).into();
-                let next_id = if lsb == 1 { self.id } else { new_id };
-                self.id = new_id;
-                if self.idx >= 14 {
-                    None
-                } else {
-                    self.idx += 1;
-                    Some((next_id, self.data[self.idx]))
-                }
+        let ret = if self.idx & 1 != 0 {
+            // Odd indices of the frame always contain data associated with the previous ID.
+            Some((self.id, byte))
+        } else if byte & 1 == 0 {
+            // Even bytes utilize the LSbit to indicate if they contain an ID or data. For a cleared LSbit, data is
+            // contained and the correct LSbit is stored at the end of the frame.
+            Some((self.id, byte | lsb))
+        } else {
+            // Even bytes may also contain a new ID to swap to. In this case, the LSbit contained at the end of the
+            // frame is used to indicate if the following data uses the new or old ID.
+            let new_id = (byte >> 1).into();
+            let next_id = if lsb == 1 { self.id } else { new_id };
+            self.id = new_id;
+            if self.idx >= 14 {
+                None
+            } else {
+                self.idx += 1;
+                Some((next_id, self.data[self.idx]))
             }
-            (1, _) => Some((self.id, byte)),
-            _ => unreachable!(),
         };
         self.idx += 1;
         ret
