@@ -1,9 +1,9 @@
 [package]
-name = "stm32h7-capture"
+name = "etf-trace"
 version = "0.1.0"
 edition = "2021"
 
-description = "Capture ITM trace data using the STM32H7 embedded trace FIFO and store results to a file"
+description = "Capture DWT/ITM trace data using the embedded trace FIFO"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]

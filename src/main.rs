@@ -1,21 +1,27 @@
-//! STM32H7 tracing with the Embedded Trace FIFO
+//! ITM/DWT tracing with the Embedded Trace FIFO
 //!
 //! # Design
-//! The STM32H7 tracing infrastructure allows trace data to be generated on the SWO output, which
-//! is a UART output to the debug probe. Because of the nature of this output, the throughput is
-//! inherently limited. Additionally, there is very little buffering between ITM packet generation
-//! and SWO output, so even a small amount of trace data generated in a short time interval can
-//! result in the trace data overflowing in the SWO data path.
+//! The tracing infrastructure allows trace data to be generated on the SWO
+//! output, which is a UART output to the debug probe. Because of the nature of
+//! this output, the throughput is inherently limited. Additionally, there is
+//! very little buffering between ITM packet generation and SWO output, so even
+//! a small amount of trace data generated in a short time interval can result
+//! in the trace data overflowing in the SWO data path.
 //!
-//! To work around issues with buffering and throughput of the SWO output, this program provides a
-//! mechanism to instead capture ITM trace data within the Embedded Trace FIFO (ETF). The ETC is a
-//! 4KB FIFO stored in SRAM that can be used to buffer data before draining the trace data to an
-//! external source. The ETF supports both draining data to the TPIU via a parallel trace hardware
-//! interface as well as through the debug registers.
+//! Alternatively there is a wide, source synchronous and fast output through
+//! the TPIU. But that requires the availability of certain pins and a logic
+//! analyzer or a capable probe to capture the data.
 //!
-//! This program uses the ETF in "software" mode with no external tracing utilities required.
-//! Instead, the ETF is used to buffer up a trace which is then read out from the device via the
-//! debug probe.
+//! To work around issues with buffering and throughput of the SWO output and to
+//! avoid the need for, special hardware, this program provides a mechanism to
+//! instead capture DWT/ITM trace data within the Embedded Trace Buffer/FIFO
+//! (ETB/ETF). The ETF is a 4 KiB (usually) FIFO in SRAM that can be used to
+//! buffer data before draining the trace data to an external source. The ETF
+//! supports draining data through the debug registers.
+//!
+//! This program uses the ETF in "software" mode with no external tracing
+//! utilities required. Instead, the ETF is used to buffer up a trace which is
+//! then read out from the device via the debug probe.
 use anyhow::Context;
 use clap::Parser;
 use log::{info, warn};
@@ -64,10 +70,8 @@ where
 }
 
 fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("stm32h7_capture=info"),
-    )
-    .init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("etf_trace=info"))
+        .init();
 
     let cli = Args::parse();
 
