@@ -290,11 +290,11 @@ impl<'a> Iterator for &mut Frame<'a> {
         }
         let byte = self.data[self.idx];
         let lsb = (self.data[15] >> (self.idx >> 1)) & 1;
-        let ret = if self.idx.bit(1) {
+        let ret = if self.idx & 1 != 0 {
             // Odd indices of the frame always contain data associated with the previous ID.
             Some((self.id, byte))
-        } else if byte.bit(1) {
-            // Even bytes utilize the LSbit to indicate if they contain an ID or data. For an asserted LSbit, data is 
+        } else if byte & 1 == 0 {
+            // Even bytes utilize the LSbit to indicate if they contain an ID or data. For a cleared LSbit, data is
             // contained and the correct LSbit is stored at the end of the frame.
             Some((self.id, byte | lsb))
         } else {
