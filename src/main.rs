@@ -46,8 +46,6 @@ struct Args {
     target: String,
     #[clap(short, long)]
     output: String,
-    #[clap(short, long, default_value_t = 400_000_000)]
-    coreclk: u32,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -209,14 +207,9 @@ fn main() -> anyhow::Result<()> {
     // Parse ITM trace and print.
     let mut itm_trace = std::io::BufReader::new(itm_trace.into_inner()?);
     itm_trace.rewind()?;
-    let decoder = itm::Decoder::new(itm_trace, itm::DecoderOptions { ignore_eof: false });
-    let timestamp_cfg = itm::TimestampsConfiguration {
-        clock_frequency: cli.coreclk,
-        lts_prescaler: itm::LocalTimestampOptions::Enabled,
-        expect_malformed: false,
-    };
-    for packets in decoder.timestamps(timestamp_cfg) {
-        match packets {
+    let mut decoder = itm::Stream::new(itm_trace, false);
+    while let Some(packet) = decoder.next()? {
+        match packet {
             Err(e) => return Err(e).context("Decoder error"),
             Ok(packets) => info!("{packets:?}"),
         }
