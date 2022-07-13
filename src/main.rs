@@ -207,14 +207,10 @@ fn main() -> anyhow::Result<()> {
     // Parse ITM trace and print.
     let mut itm_trace = std::io::BufReader::new(itm_trace.into_inner()?);
     itm_trace.rewind()?;
-    let mut decoder = itm::decoder::Decoder::new(itm_trace, false);
-    loop {
-        match decoder.read_packet() {
-            Err(e) => match e.downcast_ref::<itm::Error>() {
-                Some(itm::Error::EofBeforePacket) | Some(itm::Error::EofDuringPacket) => break,
-                Some(e) => return Err(anyhow::anyhow!(*e)).context("Decoder error"),
-                _ => panic!(),
-            },
+    let mut decoder = itm::Stream::new(itm_trace, false);
+    while let Some(packet) = decoder.next()? {
+        match packet {
+            Err(e) => return Err(e).context("Decoder error"),
             Ok(packets) => info!("{packets:?}"),
         }
     }
