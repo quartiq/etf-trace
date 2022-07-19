@@ -24,9 +24,9 @@
 //! then read out from the device via the debug probe.
 use anyhow::Context;
 use clap::Parser;
-use log::{info, warn};
-use probe_rs::{Error, Probe, architecture::arm::component::TraceSink};
-use std::io::{Read, Seek, Write};
+use log::info;
+use probe_rs::{architecture::arm::component::TraceSink, Error, Probe};
+use std::io::{Seek, Write};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -56,6 +56,13 @@ fn main() -> anyhow::Result<()> {
     session.setup_tracing(0, &sink)?;
 
     let itm_trace = session.read_trace_data(&sink)?;
+
+    let mut output = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .open(cli.output)?;
+
+    output.write_all(&itm_trace)?;
 
     // Parse ITM trace and print.
     let mut itm_trace = std::io::BufReader::new(std::io::Cursor::new(itm_trace.as_slice()));
