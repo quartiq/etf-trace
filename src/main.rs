@@ -50,12 +50,10 @@ fn main() -> anyhow::Result<()> {
         .ok_or(Error::UnableToOpenProbe("not found"))?
         .open()?;
 
-    let sink = TraceSink::TraceMemory;
-
     let mut session = probe.attach(cli.target, probe_rs::Permissions::default())?;
-    session.setup_tracing(0, &sink)?;
+    session.setup_tracing(0, TraceSink::TraceMemory)?;
 
-    let itm_trace = session.read_trace_data(&sink)?;
+    let itm_trace = session.read_trace_data()?;
 
     let mut output = std::fs::OpenOptions::new()
         .create(true)
