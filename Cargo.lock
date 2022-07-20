@@ -458,7 +458,7 @@ checksum = "1df8c4ec4b0627e53bdf214615ad287367e482558cf84b109250b37464dc03ae"
 [[package]]
 name = "probe-rs"
 version = "0.13.0"
-source = "git+https://github.com/ryan-summers/probe-rs?branch=feature/etf-support#d19f9a4b512c8ff855b0218277a0e19be5e3af37"
+source = "git+https://github.com/probe-rs/probe-rs#01f9a2175f3757eedf4b05a116ff21d38ca9c612"
 dependencies = [
  "anyhow",
  "base64",
@@ -488,7 +488,7 @@ dependencies = [
 [[package]]
 name = "probe-rs-target"
 version = "0.13.0"
-source = "git+https://github.com/ryan-summers/probe-rs?branch=feature/etf-support#d19f9a4b512c8ff855b0218277a0e19be5e3af37"
+source = "git+https://github.com/probe-rs/probe-rs#01f9a2175f3757eedf4b05a116ff21d38ca9c612"
 dependencies = [
  "base64",
  "jep106",
