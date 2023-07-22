@@ -26,7 +26,7 @@ use anyhow::Context;
 use clap::Parser;
 use log::info;
 use probe_rs::{architecture::arm::component::TraceSink, Error, Probe};
-use std::io::{Seek, Write};
+use std::io::Write;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -55,17 +55,17 @@ fn main() -> anyhow::Result<()> {
 
     let itm_trace = session.read_trace_data()?;
 
-    let mut output = std::fs::OpenOptions::new()
+    std::fs::OpenOptions::new()
         .create(true)
         .write(true)
-        .open(cli.output)?;
-
-    output.write_all(&itm_trace)?;
+        .open(cli.output)?
+        .write_all(&itm_trace)?;
 
     // Parse ITM trace and print.
-    let mut itm_trace = std::io::BufReader::new(std::io::Cursor::new(itm_trace.as_slice()));
-    itm_trace.rewind()?;
-    let decoder = itm::Decoder::new(itm_trace, itm::DecoderOptions { ignore_eof: false });
+    let decoder = itm::Decoder::new(
+        itm_trace.as_slice(),
+        itm::DecoderOptions { ignore_eof: false },
+    );
     let timestamp_cfg = itm::TimestampsConfiguration {
         clock_frequency: cli.coreclk,
         lts_prescaler: itm::LocalTimestampOptions::Enabled,
